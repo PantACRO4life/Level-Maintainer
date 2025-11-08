@@ -30,14 +30,27 @@ local function findChest()
     
     print("Searching for chest on all sides...")
     for _, sideInfo in ipairs(allSides) do
-        local size = inv.getInventorySize(sideInfo.side)
-        if size and size > 0 then
+        local success, size = pcall(inv.getInventorySize, sideInfo.side)
+        if success and size and size > 0 then
             print("Chest found on side: " .. sideInfo.name .. "!")
             return sideInfo.side
         end
     end
     
-    error("No chest found connected to the Adapter")
+    -- If no chest found, ask user manually
+    print("\nNo chest detected automatically.")
+    print("Available sides:")
+    print("0 = bottom, 1 = top, 2 = back, 3 = front, 4 = right, 5 = left")
+    io.write("Enter side number manually: ")
+    local input = io.read()
+    local sideNum = tonumber(input)
+    
+    if sideNum and sideNum >= 0 and sideNum <= 5 then
+        print("Using side: " .. sideNum)
+        return sideNum
+    end
+    
+    error("Invalid side number or no chest found connected to the robot")
 end
 
 local function parseExpression(str)
