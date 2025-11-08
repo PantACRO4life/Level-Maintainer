@@ -7,7 +7,7 @@ local function exists(filename)
     return filesystem.exists(shell.getWorkingDirectory() .. "/" .. filename)
 end
 
-local repo = "https://raw.githubusercontent.com/DiFaYaL/Level-Maintainer/";
+local repo = "https://raw.githubusercontent.com/Armagedon13/Level-Maintainer/";
 local branch = "master"
 
 for i = 1, #paths do
