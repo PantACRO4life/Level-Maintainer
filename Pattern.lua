@@ -141,6 +141,41 @@ local function scanChest(chestSide, existingItems)
 
     local items = {}
     local addedCount = 0
+    
+    -- Items to ignore (computer components, upgrades, etc)
+    local ignorePatterns = {
+        "card",
+        "upgrade",
+        "cpu",
+        "memory",
+        "disk",
+        "eeprom",
+        "floppy",
+        "hard drive",
+        "graphics card",
+        "internet card",
+        "redstone card",
+        "network card",
+        "screen",
+        "keyboard",
+        "tablet",
+        "drone",
+        "robot",
+        "computer",
+        "server",
+        "case"
+    }
+    
+    local function shouldIgnoreItem(itemName)
+        if not itemName then return true end
+        local lowerName = itemName:lower()
+        for _, pattern in ipairs(ignorePatterns) do
+            if lowerName:find(pattern) then
+                return true
+            end
+        end
+        return false
+    end
 
     print("Scanning chest with " .. size .. " slots...")
     
@@ -149,7 +184,7 @@ local function scanChest(chestSide, existingItems)
         if stack and stack.size and stack.size > 0 then
             local item_name = stack.label or stack.name
             
-            if item_name and not existingItems[item_name] then
+            if item_name and not existingItems[item_name] and not shouldIgnoreItem(item_name) then
                 local threshold = ITEM_THRESHOLD
                 local batch_size = ITEM_BATCH_SIZE
                 local fluid_name = nil
@@ -180,6 +215,8 @@ local function scanChest(chestSide, existingItems)
                 end
                 
                 addedCount = addedCount + 1
+            elseif item_name and shouldIgnoreItem(item_name) then
+                print("Ignoring: " .. item_name .. " (computer component)")
             end
         end
     end
