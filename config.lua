@@ -1,7 +1,11 @@
 local cfg = {}
 
 -- EXAMPLE --
+-- NEW SIMPLIFIED FORMAT:
+-- ["item_name"] = {threshold, batch_size}
+-- ["item_name"] = {nil, batch_size}  -- without threshold (better performance!)
 
+-- OLD FORMAT (for backward compatibility):
 -- ["item_name"] = {{item_id, item_meta},threshold, batchsize} -- keep in mind that no threshold has a better performance!
 -- ["fluid_name"] = {{fluid_tag item},threshold, batchsize}}  -- keep in mind that no threshold has a better performance!
 -- ["Osmium Dust"] = {{ item_id = "gregtech:gt.metaitem.01", item_meta = "2083"}, nil, 64}, -- without threshold, batch_size=64

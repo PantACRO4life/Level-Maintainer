@@ -105,8 +105,15 @@ end
 local function askValue(prompt, default)
     io.write(prompt .. " [" .. tostring(default) .. "]: ")
     local input = io.read()
+    
+    -- Handle empty input - use default
     if input == nil or input == "" then
         return default
+    end
+    
+    -- Handle explicit "nil" input
+    if input:lower() == "nil" then
+        return nil
     end
 
     local value, err = parseExpression(input)
@@ -204,15 +211,17 @@ local function scanChest(chestSide, existingItems)
                 end
 
                 print("\nNew item found: " .. item_name)
-                threshold = askValue(item_name .. " threshold (enter 'nil' for none)", threshold)
+                threshold = askValue(item_name .. " threshold", threshold)
                 batch_size = askValue(item_name .. " batch_size", batch_size)
                 
-                -- SIMPLIFIED FORMAT: only threshold and batch_size
-                -- Pattern.lua will generate: items[name] = {threshold, batch_size}
-                items[item_name] = {threshold, batch_size}
-                addedCount = addedCount + 1
+                -- Build the item entry
+                if fluid_name then
+                    items[item_name] = {{fluid_tag = fluid_name}, threshold, batch_size}
+                else
+                    items[item_name] = {{item_id = stack.name, item_meta = stack.damage or 0}, threshold, batch_size}
+                end
                 
-                return items, addedCount
+                addedCount = addedCount + 1
             elseif item_name and shouldIgnoreItem(item_name) then
                 print("Ignoring: " .. item_name .. " (computer component)")
             end
@@ -227,9 +236,12 @@ local function serializeItems(tbl)
     table.insert(result, "{")
     for k,v in pairs(tbl) do
         local key = string.format("[\"%s\"]", k)
-        local threshold_str = (v[1] == nil) and "nil" or tostring(v[1])
-        local batch_str = tostring(v[2] or 0)
-        table.insert(result, string.format("%s%s = {%s, %s},", ind, key, threshold_str, batch_str))
+        local dataTable = v[1] and serializeTable(v[1]) or "nil"
+        local threshold = (v[2] == nil) and "nil" or tostring(v[2])
+        local batch = tostring(v[3] or 0)
+        
+        table.insert(result, string.format("%s%s = {%s, %s, %s},", 
+            ind, key, dataTable, threshold, batch))
     end
     table.insert(result, "}")
     return table.concat(result, "\n")
