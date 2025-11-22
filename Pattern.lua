@@ -204,17 +204,15 @@ local function scanChest(chestSide, existingItems)
                 end
 
                 print("\nNew item found: " .. item_name)
-                threshold = askValue(item_name .. " threshold", threshold)
+                threshold = askValue(item_name .. " threshold (enter 'nil' for none)", threshold)
                 batch_size = askValue(item_name .. " batch_size", batch_size)
                 
-                -- Build the item entry
-                if fluid_name then
-                    items[item_name] = {{fluid_tag = fluid_name}, threshold, batch_size}
-                else
-                    items[item_name] = {{item_id = stack.name, item_meta = stack.damage or 0}, threshold, batch_size}
-                end
-                
+                -- SIMPLIFIED FORMAT: only threshold and batch_size
+                -- Pattern.lua will generate: items[name] = {threshold, batch_size}
+                items[item_name] = {threshold, batch_size}
                 addedCount = addedCount + 1
+                
+                return items, addedCount
             elseif item_name and shouldIgnoreItem(item_name) then
                 print("Ignoring: " .. item_name .. " (computer component)")
             end
@@ -229,12 +227,9 @@ local function serializeItems(tbl)
     table.insert(result, "{")
     for k,v in pairs(tbl) do
         local key = string.format("[\"%s\"]", k)
-        local dataTable = v[1] and serializeTable(v[1]) or "nil"
-        local threshold = (v[2] == nil) and "nil" or tostring(v[2])
-        local batch = tostring(v[3] or 0)
-        
-        table.insert(result, string.format("%s%s = {%s, %s, %s},", 
-            ind, key, dataTable, threshold, batch))
+        local threshold_str = (v[1] == nil) and "nil" or tostring(v[1])
+        local batch_str = tostring(v[2] or 0)
+        table.insert(result, string.format("%s%s = {%s, %s},", ind, key, threshold_str, batch_str))
     end
     table.insert(result, "}")
     return table.concat(result, "\n")

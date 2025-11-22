@@ -9,6 +9,10 @@ local cfg = require("config")
 local items = cfg.items
 local sleepInterval = cfg.sleep
 
+pcall(function()
+  dofile("Updater.lua")
+end)
+
 local function exitMaintainer()
   term.clear()
   term.setCursor(1, 1)
@@ -17,20 +21,18 @@ local function exitMaintainer()
 end
 
 local function logInfoColoredAfterColon(msg, color)
-
-if type(msg) ~= "string" then msg = tostring(msg) end
-    local before, after = msg:match("^(.-):%s*(.+)$")
-    if not before then
+  if type(msg) ~= "string" then msg = tostring(msg) end
+  local before, after = msg:match("^(.-):%s*(.+)$")
+  if not before then
     print(msg)
     return
-end
+  end
 
-local old = gpu.getForeground()
-    io.write("[" .. os.date("%H:%M:%S") .. "] " .. before .. ": ")
-    if color then gpu.setForeground(color) end
-    io.write(after .. "\n")
-    gpu.setForeground(old)
-
+  local old = gpu.getForeground()
+  io.write("[" .. os.date("%H:%M:%S") .. "] " .. before .. ": ")
+  if color then gpu.setForeground(color) end
+  io.write(after .. "\n")
+  gpu.setForeground(old)
 end
 
 local function logInfo(msg)
@@ -40,31 +42,48 @@ end
 while true do
   term.clear()
   term.setCursor(1, 1)
-  print("Press Q to exit. Item inspection interval: " .. sleepInterval .. " сек.\n")
+  print("Press Q to exit. Item inspection interval: " .. sleepInterval .. " sec.\n")
 
-local itemsCrafting = ae2.checkIfCrafting()
+  local itemsCrafting = ae2.checkIfCrafting()
 
   for item, cfgItem in pairs(items) do
     if itemsCrafting[item] then
       logInfo(item .. ": is already being crafted, skipping...")
     else
+      -- Support both formats:
+      -- Old: {data_table, threshold, batch_size}
+      -- New: {threshold, batch_size}
+      local data, threshold, batch_size
       
-    local success, msg = ae2.requestItem(item, cfgItem[1], cfgItem[2], cfgItem[3])
+      if type(cfgItem[1]) == "table" then
+        -- Old format: {{fluid_tag = "..."}, threshold, batch_size}
+        data = cfgItem[1]
+        threshold = cfgItem[2]
+        batch_size = cfgItem[3]
+      else
+        -- New simplified format: {threshold, batch_size}
+        data = nil  -- Will be auto-detected by AE2
+        threshold = cfgItem[1]
+        batch_size = cfgItem[2]
+      end
+      
+      local success, msg = ae2.requestItem(item, data, threshold, batch_size)
+      
       local color = nil
       if msg:find("^Failed to request") then
-        color = 0xFF0000 -- красный
+        color = 0xFF0000 -- red
       elseif msg:find("^Requested") then
-        color = 0xFFFF00 -- жёлтый
+        color = 0xFFFF00 -- yellow
       elseif msg:find("The amount %(") and msg:find("Aborting request%.$") then
-        color = 0x00FF00 -- зелёный
+        color = 0x00FF00 -- green
       end
 
       logInfoColoredAfterColon(item .. ": " .. msg, color)
     end
   end
 
-    local _, _, _, code = event.pull(sleepInterval, "key_down")
-    if code == 0x10 then -- Q
+  local _, _, _, code = event.pull(sleepInterval, "key_down")
+  if code == 0x10 then -- Q
     exitMaintainer()
   end
 end

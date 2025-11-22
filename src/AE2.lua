@@ -6,14 +6,11 @@ local AE2 = {}
 
 local itemCache = {}
 local cacheTimestamp = 0
-local CACHE_DURATION = 600 -- 10 минут
+local CACHE_DURATION = 600 -- 10 minutes
 
 function AE2.printColoredAfterColon(line, color)
-  
   if type(line) ~= "string" then line = tostring(line) end
-  
   local before, after = line:match("^(.-):%s*(.+)$")
-  
   if not before then
     io.write(line .. "\n")
     return
@@ -24,7 +21,6 @@ function AE2.printColoredAfterColon(line, color)
   if color then gpu.setForeground(color) end
   io.write(after .. "\n")
   gpu.setForeground(old)
-
 end
 
 local function formatNumber(num)
@@ -59,7 +55,20 @@ local function getCraftableForItem(itemName)
   return craftable
 end
 
--- Возвращает: success:boolean, message:string (без цвета)
+-- Auto-detect if item is a fluid based on name
+local function isFluidDrop(itemName)
+  return itemName:lower():find("drop") ~= nil
+end
+
+-- Extract fluid tag from item name
+local function getFluidTagFromName(itemName)
+  local fluidName = itemName:gsub("^[Dd]rop [Oo]f ", "")
+  fluidName = fluidName:gsub("^[Mm]olten ", "molten.")
+  fluidName = fluidName:gsub(" ", ".")
+  return fluidName:lower()
+end
+
+-- Returns: success:boolean, message:string
 function AE2.requestItem(name, data, threshold, count)
   local craftable = getCraftableForItem(name)
   if not craftable then
@@ -69,21 +78,32 @@ function AE2.requestItem(name, data, threshold, count)
   local item = craftable.getItemStack()
   local itemInSystem = nil
 
-  if threshold then
-    if (data.fluid_tag ~= nil) then
-    
-      itemInSystem = ME.getItemInNetwork('ae2fc:fluid_drop', 0, "{Fluid:\"" .. data.fluid_tag .. "\"}")
-    
+  if threshold and threshold > 0 then
+    -- If data is provided (old format), use it
+    if data then
+      if data.fluid_tag then
+        itemInSystem = ME.getItemInNetwork('ae2fc:fluid_drop', 0, "{Fluid:\"" .. data.fluid_tag .. "\"}")
+      else
+        itemInSystem = ME.getItemInNetwork(data.item_id, tonumber(data.item_meta))
+      end
     else
-    
-      itemInSystem = ME.getItemInNetwork(data.item_id, tonumber(data.item_meta))
-    
+      -- New format: auto-detect based on item name and craftable data
+      if isFluidDrop(name) then
+        -- It's a fluid - try to get fluid tag from craftable item
+        local fluidTag = getFluidTagFromName(name)
+        itemInSystem = ME.getItemInNetwork('ae2fc:fluid_drop', 0, "{Fluid:\"" .. fluidTag .. "\"}")
+      else
+        -- It's a regular item
+        if item.name then
+          itemInSystem = ME.getItemInNetwork(item.name, item.damage or 0)
+        end
+      end
     end
 
     if itemInSystem and itemInSystem.size >= threshold then
       local currentAmount = formatNumber(itemInSystem.size)
       local thresholdFmt = formatNumber(threshold)
-      return false, "The amount (" .. currentAmount .. ") threshold (" .. thresholdFmt .. ")! Aborting request."
+      return false, "The amount (" .. currentAmount .. ") >= threshold (" .. thresholdFmt .. ")! Aborting request."
     end
   end
 
@@ -92,11 +112,8 @@ function AE2.requestItem(name, data, threshold, count)
     while craft.isComputing() do os.sleep(1) end
 
     if craft.hasFailed() then
-    
       return false, "Failed to request " .. formatNumber(count)
-    
     else
-
       return true, "Requested " .. formatNumber(count)
     end
   end

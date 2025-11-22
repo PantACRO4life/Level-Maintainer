@@ -1,31 +1,52 @@
 local shell = require("shell")
 local filesystem = require("filesystem")
-local scripts = {"src/AE2.lua", "src/Utility.lua", "Maintainer.lua", "Pattern.lua"}
-local paths = {"src", "lib"}
 
-local function exists(filename)
-    return filesystem.exists(shell.getWorkingDirectory() .. "/" .. filename)
-end
-
-local repo = "https://raw.githubusercontent.com/Armagedon13/Level-Maintainer/";
+local repo = "https://raw.githubusercontent.com/Armagedon13/Level-Maintainer/"
 local branch = "master"
 
-for i = 1, #paths do
-    if not filesystem.exists(shell.getWorkingDirectory() .. "/" .. paths[i]) then
-        filesystem.makeDirectory(shell.getWorkingDirectory() .. "/" .. paths[i]);
-    end
+local files = {
+  "src/AE2.lua",
+  "src/Utility.lua", 
+  "Maintainer.lua",
+  "Pattern.lua",
+  "Updater.lua",
+  "version.lua"
+}
+
+local dirs = {"src", "lib"}
+
+print("Installing Level Maintainer...")
+
+-- Create directories
+for _, dir in ipairs(dirs) do
+  local path = shell.getWorkingDirectory() .. "/" .. dir
+  if not filesystem.exists(path) then
+    filesystem.makeDirectory(path)
+  end
 end
 
-for i = 1, #scripts do
-    if exists(scripts[i]) then
-        filesystem.remove(shell.getWorkingDirectory() .. "/" .. scripts[i]);
-    end
-
-    shell.execute(string.format("wget %s%s/%s %s", repo, branch, scripts[i], scripts[i]));
+-- Download all files
+for _, file in ipairs(files) do
+  local url = repo .. branch .. "/" .. file
+  local path = shell.getWorkingDirectory() .. "/" .. file
+  
+  if filesystem.exists(path) then
+    filesystem.remove(path)
+  end
+  
+  print("Downloading " .. file .. "...")
+  shell.execute("wget -fq " .. url .. " " .. path)
 end
 
-if not exists("config.lua") then
-    shell.execute(string.format("wget %s%s/config.lua", repo, branch));
+-- Download config only if it doesn't exist
+local configPath = shell.getWorkingDirectory() .. "/config.lua"
+if not filesystem.exists(configPath) then
+  print("Downloading default config.lua...")
+  shell.execute("wget -fq " .. repo .. branch .. "/config.lua " .. configPath)
+else
+  print("Config.lua already exists - preserved")
 end
 
-shell.execute("reboot");
+print("\nInstallation complete!")
+os.sleep(2)
+shell.execute("reboot")
