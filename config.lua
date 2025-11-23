@@ -17,4 +17,8 @@ cfg["items"] = {
 
 cfg["sleep"] = 10
 
+-- Timezone offset in hours
+-- Examples: -3 (Argentina), 0 (UTC), 1 (Europe), -5 (USA East)
+cfg["timezone"] = 0
+
 return cfg
