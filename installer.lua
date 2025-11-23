@@ -9,7 +9,7 @@ local files = {
   "src/Utility.lua", 
   "Maintainer.lua",
   "Pattern.lua",
-  "Updater.lua",
+  "updater.lua",
   "version.lua"
 }
 

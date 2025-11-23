@@ -19,14 +19,14 @@ end
 function Updater.getCurrentVersion()
   local versionPath = shell.getWorkingDirectory() .. "/version.lua"
   if not filesystem.exists(versionPath) then
-    return {programVersion = "0.0.0", configVersion = 0}
+    return {programVersion = "0.0.0"}
   end
   
   local success, version = pcall(dofile, versionPath)
   if success and version then
     return version
   end
-  return {programVersion = "0.0.0", configVersion = 0}
+  return {programVersion = "0.0.0"}
 end
 
 -- Get latest version from GitHub
@@ -60,7 +60,7 @@ end
 function Updater:isUpdateNeeded()
   local remoteVersion, err = self:getLatestVersion()
   if not remoteVersion then
-    return false, false, nil, err
+    return false, nil, err
   end
   
   -- Compare program versions (remove non-digits for comparison)
@@ -68,15 +68,15 @@ function Updater:isUpdateNeeded()
   local latestProgramVersion = remoteVersion.programVersion:gsub("[%D]", "")
   
   local isProgramUpdateNeeded = tonumber(latestProgramVersion) > tonumber(currentProgramVersion)
-  local isConfigUpdateNeeded = remoteVersion.configVersion > self.currentVersion.configVersion
   
-  return isProgramUpdateNeeded, isConfigUpdateNeeded, remoteVersion
+  return isProgramUpdateNeeded, remoteVersion
 end
 
--- Download and update files
+-- Download and update files (NEVER touches config.lua)
 function Updater:downloadFiles()
   local repo = "https://raw.githubusercontent.com/" .. self.repository .. "/" .. self.branch .. "/"
   
+  -- Files to update - config.lua is NEVER included
   local files = {
     "src/AE2.lua",
     "src/Utility.lua",
@@ -108,37 +108,19 @@ end
 
 -- Backup config
 function Updater:backupConfig()
-  local configPath = shell.getWorkingDirectory() .. "/config.lua"
-  local backupPath = shell.getWorkingDirectory() .. "/config.old.lua"
-  
-  if filesystem.exists(configPath) then
-    if filesystem.exists(backupPath) then
-      filesystem.remove(backupPath)
-    end
-    shell.execute("cp " .. configPath .. " " .. backupPath)
-    return true
-  end
-  return false
+  -- We don't backup anymore - config.lua is NEVER touched
+  return true
 end
 
 -- Restore config
 function Updater:restoreConfig()
-  local configPath = shell.getWorkingDirectory() .. "/config.lua"
-  local backupPath = shell.getWorkingDirectory() .. "/config.old.lua"
-  
-  if filesystem.exists(backupPath) then
-    if filesystem.exists(configPath) then
-      filesystem.remove(configPath)
-    end
-    shell.execute("mv " .. backupPath .. " " .. configPath)
-    return true
-  end
-  return false
+  -- We don't restore anymore - config.lua is NEVER touched
+  return true
 end
 
 -- Main update function
 function Updater:checkAndUpdate(silent)
-  local isProgramUpdate, isConfigUpdate, remoteVersion, err = self:isUpdateNeeded()
+  local isProgramUpdate, remoteVersion, err = self:isUpdateNeeded()
   
   if err then
     if not silent then
@@ -164,13 +146,6 @@ function Updater:checkAndUpdate(silent)
   print("Latest version:  " .. remoteVersion.programVersion)
   print("")
   
-  if isConfigUpdate then
-    print("⚠ WARNING: This update changes the config format!")
-    print("Your current config will be backed up to config.old.lua")
-    print("You will need to manually update your config.lua")
-    print("")
-  end
-  
   io.write("Do you want to update? (y/n): ")
   local answer = io.read()
   
@@ -179,41 +154,28 @@ function Updater:checkAndUpdate(silent)
     return false
   end
   
-  -- Backup config
-  print("\nBacking up config...")
-  self:backupConfig()
-  
-  -- Download files
+  -- Download files (config.lua is NEVER touched)
   print("\nDownloading updates...")
   self:downloadFiles()
   
-  -- Handle config
-  if isConfigUpdate then
-    print("\n⚠ Config format changed!")
-    print("Your old config is saved as config.old.lua")
-    print("Please manually update config.lua with your settings")
-    print("\nPress Enter to continue...")
-    io.read()
-  else
-    print("\nRestoring config...")
-    self:restoreConfig()
-    print("✓ Config preserved")
-    
-    print("\nUpdate complete! Rebooting...")
-    os.sleep(2)
-    shell.execute("reboot")
-  end
+  print("\n✓ Update complete!")
+  print("✓ Your config.lua was NOT modified")
+  print("\nRebooting...")
+  os.sleep(2)
+  shell.execute("reboot")
   
   return true
 end
 
--- Run updater
-local function main()
-  local args = {...}
-  local silent = args[1] == "silent" or args[1] == "-s"
-  
-  local updater = Updater.new()
-  updater:checkAndUpdate(silent)
+-- Run updater when executed directly
+local args = {...}
+local silent = false
+
+-- Check if running with arguments
+if args and #args > 0 then
+  silent = args[1] == "silent" or args[1] == "-s"
 end
 
-main()
+-- Execute update check
+local updater = Updater.new()
+updater:checkAndUpdate(silent)

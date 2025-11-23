@@ -10,7 +10,7 @@ local items = cfg.items
 local sleepInterval = cfg.sleep
 
 pcall(function()
-  dofile("Updater.lua")
+  dofile("updater.lua")
 end)
 
 local function exitMaintainer()
