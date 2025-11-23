@@ -2,6 +2,7 @@ local term = require("term")
 local event = require("event")
 local component = require("component")
 local gpu = component.gpu
+local filesystem = require("filesystem")
 local ae2 = require("src.AE2")
 local cfg = require("config")
 
@@ -9,48 +10,46 @@ local items = cfg.items
 local sleepInterval = cfg.sleep
 local timezone = cfg.timezone or 0  -- Default 0 (UTC) if not set
 
--- Try to get internet component for real time
-local internet = nil
-local hasInternet = component.isAvailable("internet")
-if hasInternet then
-  internet = component.internet
-end
-
--- Cache real time (update every 100 calls to reduce requests)
-local cachedRealTime = 0
-local realTimeCounter = 100
-
 -- Auto-update check
 pcall(function()
   local shell = require("shell")
   shell.execute("updater silent")
 end)
 
--- Function to get real world time with timezone offset
+-- Function to get real system time using filesystem trick
+local function getRealTime()
+  local tempfile = "/tmp/timefile"
+  local file = filesystem.open(tempfile, "a")  -- Create/touch file
+  if file then
+    file:close()
+    local timestamp = filesystem.lastModified(tempfile) / 1000  -- Convert ms to seconds
+    filesystem.remove(tempfile)
+    return timestamp
+  else
+    -- Fallback to os.time() if file creation fails
+    return os.time()
+  end
+end
+
+-- Function to get time with timezone offset
 local function getLocalTime()
-  -- Try to use internet card for real time
-  if hasInternet and internet then
-    -- Update cache every 100 calls
-    if realTimeCounter >= 100 then
-      pcall(function()
-        cachedRealTime = internet.time()
-      end)
-      realTimeCounter = 0
-    end
-    realTimeCounter = realTimeCounter + 1
-    
-    -- If we have real time, use it
-    if cachedRealTime > 0 then
-      local adjustedTime = cachedRealTime + (timezone * 3600)
-      return os.date("%H:%M:%S", adjustedTime)
-    end
+  local realTime = getRealTime()
+  local offsetTime = realTime + (timezone * 3600)  -- Apply timezone offset
+  
+  local timetable = os.date("*t", offsetTime)
+  
+  -- Format minutes with leading zero
+  local min = timetable.min
+  if min < 10 then
+    min = "0" .. min
   end
   
-  -- Fallback: use os.date with timezone offset
-  -- This uses the server's system time
-  local currentTime = os.time()
-  local adjustedTime = currentTime + (timezone * 3600)
-  return os.date("%H:%M:%S", adjustedTime)
+  local sec = timetable.sec
+  if sec < 10 then
+    sec = "0" .. sec
+  end
+  
+  return timetable.hour .. ":" .. min .. ":" .. sec
 end
 
 local function exitMaintainer()
