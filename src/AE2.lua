@@ -68,6 +68,7 @@ local function getFluidTagFromName(itemName)
   return fluidName:lower()
 end
 
+-- changed NBT to Label
 -- Returns: success:boolean, message:string
 function AE2.requestItem(name, data, threshold, count)
   local craftable = getCraftableForItem(name)
@@ -75,50 +76,55 @@ function AE2.requestItem(name, data, threshold, count)
     return false, "is not craftable!"
   end
 
-  local item = craftable.getItemStack()
-  local itemInSystem = nil
-
   if threshold and threshold > 0 then
-    -- If data is provided (old format), use it
-    if data then
-      if data.fluid_tag then
-        itemInSystem = ME.getItemInNetwork('ae2fc:fluid_drop', 0, "{Fluid:\"" .. data.fluid_tag .. "\"}")
-      else
-        itemInSystem = ME.getItemInNetwork(data.item_id, tonumber(data.item_meta))
-      end
-    else
-      -- New format: auto-detect based on item name and craftable data
-      if isFluidDrop(name) then
-        -- It's a fluid - try to get fluid tag from craftable item
-        local fluidTag = getFluidTagFromName(name)
-        itemInSystem = ME.getItemInNetwork('ae2fc:fluid_drop', 0, "{Fluid:\"" .. fluidTag .. "\"}")
-      else
-        -- It's a regular item
-        if item.name then
-          itemInSystem = ME.getItemInNetwork(item.name, item.damage or 0)
-        end
+    local currentStock = 0
+    
+    local itemsFound = ME.getItemsInNetwork({ label = name })
+    if itemsFound then
+      for _, i in pairs(itemsFound) do
+        currentStock = currentStock + i.size
       end
     end
 
-    if itemInSystem and itemInSystem.size >= threshold then
-      local currentAmount = formatNumber(itemInSystem.size)
+    local fluids = ME.getFluidsInNetwork()
+    if fluids then
+        local cleanName = name:gsub("^[Dd]rop [Oo]f ", ""):gsub("^[Mm]olten ", ""):lower()
+        local targetNameLower = name:lower()
+        
+        for _, f in pairs(fluids) do
+            local labelLower = (f.label or ""):lower()
+            if labelLower == targetNameLower or labelLower == cleanName then
+                currentStock = currentStock + f.amount
+            end
+        end
+    end
+
+    if currentStock >= threshold then
+      local currentFmt = formatNumber(currentStock)
       local thresholdFmt = formatNumber(threshold)
-      return false, "The amount (" .. currentAmount .. ") >= threshold (" .. thresholdFmt .. ")! Aborting request."
+      return false, "The amount (" .. currentFmt .. ") >= threshold (" .. thresholdFmt .. ")! Aborting request."
     end
   end
 
-  if item and item.label == name then
+  if craftable then
     local craft = craftable.request(count)
-    while craft.isComputing() do os.sleep(1) end
+    
+    local timeout = 5
+    while craft.isComputing() and timeout > 0 do 
+        os.sleep(0.1) 
+        timeout = timeout - 1
+    end
 
     if craft.hasFailed() then
-      return false, "Failed to request " .. formatNumber(count)
+      local reason = "Unknown"
+      pcall(function() reason = tostring(craft.hasFailed()) end)
+      return false, "Failed to request " .. formatNumber(count) .. " [" .. reason .. "]"
     else
       return true, "Requested " .. formatNumber(count)
     end
   end
 
-  return false, "is not craftable!"
+  return false, "is not craftable! (Generic Error)"
 end
 
 function AE2.checkIfCrafting()

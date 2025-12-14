@@ -1,8 +1,8 @@
-local component = require "component"
-local sides = require "sides"
-local filesystem = require "filesystem"
+local component = require("component")
+local sides = require("sides")
+local filesystem = require("filesystem")
 
--- Configuration
+-- Configuration files
 local configPath = "/home/config.lua"
 local shrcPath = "/home/.shrc"
 
@@ -12,14 +12,14 @@ local ITEM_THRESHOLD = 128
 local FLUID_BATCH_SIZE = 1
 local FLUID_THRESHOLD = 1000
 
--- Function to automatically detect the chest
+-- Function to automatically detect the chest, ignoring Computer Cases
 local function findChest()
     if not component.isAvailable("inventory_controller") then
         error("Inventory Controller not found!")
     end
     
     local inv = component.inventory_controller
-    -- For Adapter: sides are 0-5 (not sides.top, etc)
+    -- For Adapter: sides are 0-5
     local allSides = {
         {name = "bottom", side = 0},
         {name = "top", side = 1},
@@ -31,24 +31,41 @@ local function findChest()
     
     print("Searching for chest on all sides...")
     for _, sideInfo in ipairs(allSides) do
-        local success, size = pcall(inv.getInventorySize, sideInfo.side)
-        if success and size and size > 0 then
-            print("Chest found on side: " .. sideInfo.name .. " (side " .. sideInfo.side .. ")!")
-            return sideInfo.side
+        -- Check if side has an inventory
+        local size = inv.getInventorySize(sideInfo.side)
+        
+        if size and size > 0 then
+            -- Get inventory name to filter out the Computer Case/Robot itself
+            local invName = inv.getInventoryName(sideInfo.side) or ""
+            local lowerName = string.lower(invName)
+
+            -- Filter: If name contains "computer", "case", "robot", "drive", etc. skip it.
+            -- This prevents the script from adding your CPU/RAM/HDD to the config.
+            if string.find(lowerName, "case") or 
+               string.find(lowerName, "computer") or 
+               string.find(lowerName, "robot") or 
+               string.find(lowerName, "disk") or
+               string.find(lowerName, "drive") then
+                
+                print("Skipping OpenComputers component on side " .. sideInfo.side .. " (" .. invName .. ")")
+            else
+                -- It's likely a valid chest/crate
+                print("Chest found on side: " .. sideInfo.name .. " (side " .. sideInfo.side .. ") - " .. invName)
+                return sideInfo.side
+            end
         end
     end
     
-    -- If no chest found, ask user manually
-    print("\nNo chest detected automatically.")
-    print("Available sides:")
-    print("0 = bottom, 1 = top, 2 = back, 3 = front, 4 = right, 5 = left")
-    io.write("Enter side number where chest is located: ")
+    -- If no chest found automatically, ask user
+    print("\nNo chest detected automatically (or all were filtered out).")
+    print("Available sides: 0=bottom, 1=top, 2=back, 3=front, 4=right, 5=left")
+    io.write("Enter side number manually: ")
     local input = io.read()
     local sideNum = tonumber(input)
     
     if sideNum and sideNum >= 0 and sideNum <= 5 then
-        local success, size = pcall(inv.getInventorySize, sideNum)
-        if success and size and size > 0 then
+        local size = inv.getInventorySize(sideNum)
+        if size and size > 0 then
             print("Using side: " .. sideNum)
             return sideNum
         else
@@ -62,7 +79,7 @@ end
 local function parseExpression(str)
     if type(str) ~= "string" then return nil, "not a string" end
 
-    -- Support for 1k, 1m, 1g, 1t, 1p
+    -- Support for 1k, 1m, 1g, 1t, 1p suffix
     str = str:gsub("([0-9%.]+)%s*[kK]", "%1*1000")
     str = str:gsub("([0-9%.]+)%s*[mM]", "%1*1000000")
     str = str:gsub("([0-9%.]+)%s*[gG]", "%1*1000000000")
@@ -106,12 +123,10 @@ local function askValue(prompt, default)
     io.write(prompt .. " [" .. tostring(default) .. "]: ")
     local input = io.read()
     
-    -- Handle empty input - use default
     if input == nil or input == "" then
         return default
     end
     
-    -- Handle explicit "nil" input
     if input:lower() == "nil" then
         return nil
     end
@@ -136,6 +151,7 @@ local function serializeTable(tbl)
     return str
 end
 
+-- Scan chest contents
 local function scanChest(chestSide, existingItems)
     if not component.isAvailable("inventory_controller") then
         error("Inventory Controller not found!")
@@ -149,28 +165,11 @@ local function scanChest(chestSide, existingItems)
     local items = {}
     local addedCount = 0
     
-    -- Items to ignore (computer components, upgrades, etc)
+    -- Blacklist for items (double check in case filtering failed)
     local ignorePatterns = {
-        "card",
-        "upgrade",
-        "cpu",
-        "memory",
-        "disk",
-        "eeprom",
-        "floppy",
-        "hard drive",
-        "graphics card",
-        "internet card",
-        "redstone card",
-        "network card",
-        "screen",
-        "keyboard",
-        "tablet",
-        "drone",
-        "robot",
-        "computer",
-        "server",
-        "case"
+        "card", "upgrade", "cpu", "memory", "disk", "eeprom", "floppy",
+        "hard drive", "graphics", "internet", "redstone", "network",
+        "screen", "keyboard", "tablet", "drone", "robot", "computer", "server", "case"
     }
     
     local function shouldIgnoreItem(itemName)
@@ -196,16 +195,15 @@ local function scanChest(chestSide, existingItems)
                 local batch_size = ITEM_BATCH_SIZE
                 local fluid_name = nil
 
-                -- Check if it's a fluid drop
+                -- Check if it is a fluid drop (GTNH/AE2FC)
                 if string.find(item_name:lower(), "drop") then
                     threshold = FLUID_THRESHOLD
                     batch_size = FLUID_BATCH_SIZE
                     
-                    -- Try to get fluid tag safely
                     if stack.fluidDrop and stack.fluidDrop.name then
                         fluid_name = stack.fluidDrop.name
                     else
-                        -- Fallback: extract from item name
+                        -- Fallback extraction
                         fluid_name = item_name:lower():gsub("drop of ", ""):gsub(" ", "_")
                     end
                 end
@@ -214,8 +212,9 @@ local function scanChest(chestSide, existingItems)
                 threshold = askValue(item_name .. " threshold", threshold)
                 batch_size = askValue(item_name .. " batch_size", batch_size)
                 
-                -- Build the item entry
+                -- Note: We only store basic data now as per new simplified format
                 if fluid_name then
+                    -- Keep minimal info for fluid
                     items[item_name] = {{fluid_tag = fluid_name}, threshold, batch_size}
                 else
                     items[item_name] = {{item_id = stack.name, item_meta = stack.damage or 0}, threshold, batch_size}
@@ -223,23 +222,26 @@ local function scanChest(chestSide, existingItems)
                 
                 addedCount = addedCount + 1
             elseif item_name and shouldIgnoreItem(item_name) then
-                print("Ignoring: " .. item_name .. " (computer component)")
+                print("Ignoring: " .. item_name .. " (blacklisted component)")
             end
         end
     end
     return items, addedCount
 end
 
+-- Save to config.lua
 local function serializeItems(tbl)
     local result = {}
     local ind = "  "
     table.insert(result, "{")
     for k,v in pairs(tbl) do
         local key = string.format("[\"%s\"]", k)
+        -- Support simplified format (threshold, batch) or old format
         local dataTable = v[1] and serializeTable(v[1]) or "nil"
         local threshold = (v[2] == nil) and "nil" or tostring(v[2])
         local batch = tostring(v[3] or 0)
         
+        -- We write the full format to keep compatibility, but Maintainer logic uses name primarily
         table.insert(result, string.format("%s%s = {%s, %s, %s},", 
             ind, key, dataTable, threshold, batch))
     end
@@ -253,13 +255,17 @@ local function updateConfigItems(newItems)
     if f then
         content = f:read("*a")
         f:close()
+    else
+        error("Config file not found at " .. configPath)
     end
 
+    -- Look for cfg["items"] table start
     local startPos, bracePos = content:find('cfg%["items"%]%s*=%s*{')
     if not startPos then
         error("Array cfg[\"items\"] not found in config.lua")
     end
 
+    -- Find matching closing brace
     local openBraces = 1
     local i = bracePos + 1
     local endPos = nil
@@ -325,6 +331,7 @@ local function main()
     local cfg = loadConfig()
     local newItems, addedCount = scanChest(chestSide, cfg.items)
 
+    -- Merge new items
     for k,v in pairs(newItems) do
         cfg.items[k] = v
     end
