@@ -62,30 +62,27 @@ function AE2.requestItem(name, data, threshold, count)
     return false, "is not craftable!"
   end
 
-  -- Check if we need to verify stock levels (Threshold logic)
+  -- Check Thresholds (Fluid + Item logic)
   if threshold and threshold > 0 then
     local currentStock = 0
     local fluidStock = 0
     local itemStock = 0
 
-    -- 1. Check Fluid Network first
-    -- This helps handle cases where fluids appear as items too (ghost items)
+    -- 1. Check Fluids
     local fluids = ME.getFluidsInNetwork()
     if fluids then
-        -- Clean up name to handle "Drop of X" or "Molten X" vs "X"
         local cleanName = name:gsub("^[Dd]rop [Oo]f ", ""):gsub("^[Mm]olten ", ""):lower()
         local targetNameLower = name:lower()
         
         for _, f in pairs(fluids) do
             local labelLower = (f.label or ""):lower()
-            -- Match exact name or cleaned name
             if labelLower == targetNameLower or labelLower == cleanName then
                 fluidStock = fluidStock + f.amount
             end
         end
     end
 
-    -- 2. Check Item Network
+    -- 2. Check Items
     local itemsFound = ME.getItemsInNetwork({ label = name })
     if itemsFound then
       for _, i in pairs(itemsFound) do
@@ -93,14 +90,10 @@ function AE2.requestItem(name, data, threshold, count)
       end
     end
 
-    -- 3. Determine actual stock with Priority Logic
+    -- 3. Calculate Total (Prioritize Fluid to avoid double counting ghost items)
     if fluidStock > 0 then
-        -- If we found it in fluids, assume it's a fluid task.
-        -- We ignore itemStock here to prevent double-counting ghost items 
-        -- that some drivers report for fluids.
         currentStock = fluidStock
     else
-        -- If no fluid found, fall back to item count.
         currentStock = itemStock
     end
 
@@ -111,18 +104,30 @@ function AE2.requestItem(name, data, threshold, count)
     end
   end
 
+  -- Execute Crafting Request
   if craftable then
     local craft = craftable.request(count)
-    -- Wait briefly for the request to register
-    local timeout = 5
+    
+    -- Wait for the request computation (AE2 calculation)
+    local timeout = 5 -- Wait up to 0.5 seconds
     while craft.isComputing() and timeout > 0 do 
         os.sleep(0.1) 
         timeout = timeout - 1
     end
 
+    -- Check for failure
     if craft.hasFailed() then
       local reason = "Unknown"
-      pcall(function() reason = tostring(craft.hasFailed()) end)
+      local success, ret = pcall(function() return craft.hasFailed() end)
+      
+      if success then
+          if type(ret) == "string" then
+              reason = ret -- The driver gave us a text reason
+          elseif ret == true then
+              reason = "Missing resources or No CPU" -- Driver just said 'true'
+          end
+      end
+      
       return false, "Failed to request " .. formatNumber(count) .. " [" .. reason .. "]"
     else
       return true, "Requested " .. formatNumber(count)
