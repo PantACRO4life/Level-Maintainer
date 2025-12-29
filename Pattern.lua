@@ -194,6 +194,7 @@ local function scanChest(chestSide, existingItems)
                 local threshold = ITEM_THRESHOLD
                 local batch_size = ITEM_BATCH_SIZE
                 local fluid_name = nil
+                local priority = "high"
 
                 -- Check if it is a fluid drop (GTNH/AE2FC)
                 if string.find(item_name:lower(), "drop") then
@@ -211,15 +212,20 @@ local function scanChest(chestSide, existingItems)
                 print("\nNew item found: " .. item_name)
                 threshold = askValue(item_name .. " threshold", threshold)
                 batch_size = askValue(item_name .. " batch_size", batch_size)
-                
+                io.write(item_name .. " priority (high/low) [high]: ")
+                local priorityInput = io.read()
+                if priorityInput and (priorityInput:lower() == "low" or priorityInput:lower() == "high") then
+                    priority = priorityInput:lower()
+                end
+
                 -- Note: We only store basic data now as per new simplified format
                 if fluid_name then
                     -- Keep minimal info for fluid
-                    items[item_name] = {{fluid_tag = fluid_name}, threshold, batch_size}
+                    items[item_name] = {{fluid_tag = fluid_name}, threshold, batch_size, priority}
                 else
-                    items[item_name] = {{item_id = stack.name, item_meta = stack.damage or 0}, threshold, batch_size}
+                    items[item_name] = {{item_id = stack.name, item_meta = stack.damage or 0}, threshold, batch_size, priority}
                 end
-                
+
                 addedCount = addedCount + 1
             elseif item_name and shouldIgnoreItem(item_name) then
                 print("Ignoring: " .. item_name .. " (blacklisted component)")
@@ -236,14 +242,12 @@ local function serializeItems(tbl)
     table.insert(result, "{")
     for k,v in pairs(tbl) do
         local key = string.format("[\"%s\"]", k)
-        -- Support simplified format (threshold, batch) or old format
         local dataTable = v[1] and serializeTable(v[1]) or "nil"
         local threshold = (v[2] == nil) and "nil" or tostring(v[2])
         local batch = tostring(v[3] or 0)
-        
-        -- We write the full format to keep compatibility, but Maintainer logic uses name primarily
-        table.insert(result, string.format("%s%s = {%s, %s, %s},", 
-            ind, key, dataTable, threshold, batch))
+        local priority = v[4] and string.format('"%s"', tostring(v[4])) or '"high"'
+        table.insert(result, string.format("%s%s = {%s, %s, %s, %s},", 
+            ind, key, dataTable, threshold, batch, priority))
     end
     table.insert(result, "}")
     return table.concat(result, "\n")
