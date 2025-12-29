@@ -8,6 +8,20 @@ local itemCache = {}
 local cacheTimestamp = 0
 local CACHE_DURATION = 600 -- 10 minutes
 
+-- Returns a table of CPU statuses: {isBusy=true/false, name=string, craftingLabel=string|nil}
+function AE2.getCpuStatus()
+  local cpus = {}
+  for _, cpu in pairs(ME.getCpus()) do
+    local status = {}
+    status.name = cpu.cpu.name and cpu.cpu.name() or "CPU"
+    status.isBusy = cpu.cpu.isBusy and cpu.cpu.isBusy() or false
+    local final = cpu.cpu.finalOutput and cpu.cpu.finalOutput()
+    status.craftingLabel = final and final.label or nil
+    table.insert(cpus, status)
+  end
+  return cpus
+end
+
 function AE2.printColoredAfterColon(line, color)
   if type(line) ~= "string" then line = tostring(line) end
   local before, after = line:match("^(.-):%s*(.+)$")

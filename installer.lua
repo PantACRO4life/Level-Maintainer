@@ -10,7 +10,8 @@ local files = {
   "Maintainer.lua",
   "Pattern.lua",
   "updater.lua",
-  "version.lua"
+  "version.lua",
+  "send_config.lua",
 }
 
 local dirs = {"src", "lib"}
