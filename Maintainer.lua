@@ -9,8 +9,8 @@ local cfg = require("config")
 local items = cfg.items
 local sleepInterval = cfg.sleep
 local timezone = cfg.timezone or 0
-local filterChestSide = cfg.filterChestSide or nil -- Optional filter chest configuration
-local showTime = cfg.showTime
+local filterChestSide = cfg.filterChestSide or nil 
+local showTime = cfg.showTime -- Leer configuración (true/false)
 
 -- Auto-update check
 pcall(function()
@@ -61,9 +61,9 @@ local function logInfoColoredAfterColon(msg, color)
     end
 
     local old = gpu.getForeground()
-    io_write(prefix .. before .. ": ")
+    io.write(prefix .. before .. ": ")
     if color then gpu.setForeground(color) end
-    io_write(after .. "\n")
+    io.write(after .. "\n")
     gpu.setForeground(old)
 end
 
@@ -72,21 +72,6 @@ local function exitMaintainer()
   term.setCursor(1, 1)
   print("Exit from Maintainer...")
   os.exit(0.5)
-end
-
-local function logInfoColoredAfterColon(msg, color)
-  if type(msg) ~= "string" then msg = tostring(msg) end
-  local before, after = msg:match("^(.-):%s*(.+)$")
-  if not before then
-    print(msg)
-    return
-  end
-
-  local old = gpu.getForeground()
-  io.write("[" .. getLocalTime() .. "] " .. before .. ": ")
-  if color then gpu.setForeground(color) end
-  io.write(after .. "\n")
-  gpu.setForeground(old)
 end
 
 local function logInfo(msg)
@@ -148,7 +133,6 @@ while true do
 
   local itemsCrafting = ae2.checkIfCrafting()
 
-
   -- Allow Crafting of low priority items only if all CPUs are either idle or crafting other stocked items
   local allowLow = true
   local cpus = ae2.getCpuStatus and ae2.getCpuStatus() or {}
@@ -173,13 +157,11 @@ while true do
       local data, threshold, batch_size, priority
 
       if type(cfgItem[1]) == "table" then
-        -- Formato Pattern.lua / Complejo
         data = cfgItem[1]
         threshold = cfgItem[2]
         batch_size = cfgItem[3]
         priority = cfgItem[4] or "high"
       else
-        -- Formato Simple / Manual
         data = nil
         threshold = cfgItem[1]
         batch_size = cfgItem[2]
