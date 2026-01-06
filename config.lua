@@ -17,6 +17,9 @@ cfg["items"] = {
 
 cfg["sleep"] = 10
 
+-- true = On, false = Off
+cfg["showTime"] = false
+
 -- Timezone offset in hours
 -- -3 = Argentina/Brazil/Chile (UTC-3)
 -- -5 = USA East Coast (UTC-5)

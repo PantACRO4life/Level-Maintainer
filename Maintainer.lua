@@ -10,6 +10,7 @@ local items = cfg.items
 local sleepInterval = cfg.sleep
 local timezone = cfg.timezone or 0
 local filterChestSide = cfg.filterChestSide or nil -- Optional filter chest configuration
+local showTime = cfg.showTime
 
 -- Auto-update check
 pcall(function()
@@ -45,6 +46,27 @@ local function getLocalTime()
   return timetable.hour .. ":" .. min .. ":" .. sec
 end
 
+local function logInfoColoredAfterColon(msg, color)
+    if type(msg) ~= "string" then msg = tostring(msg) end
+    
+    local prefix = ""
+    if showTime then
+        prefix = "[" .. getLocalTime() .. "] "
+    end
+    
+    local before, after = msg:match("^(.-):%s*(.+)$")
+    if not before then
+        print(prefix .. msg)
+        return
+    end
+
+    local old = gpu.getForeground()
+    io_write(prefix .. before .. ": ")
+    if color then gpu.setForeground(color) end
+    io_write(after .. "\n")
+    gpu.setForeground(old)
+end
+
 local function exitMaintainer()
   term.clear()
   term.setCursor(1, 1)
@@ -68,7 +90,11 @@ local function logInfoColoredAfterColon(msg, color)
 end
 
 local function logInfo(msg)
-  print("[" .. getLocalTime() .. "] " .. msg)
+    if showTime then
+        print("[" .. getLocalTime() .. "] " .. msg)
+    else
+        print(msg)
+    end
 end
 
 -- Function to scan filter chest and get paused items
