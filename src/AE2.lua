@@ -2,137 +2,25 @@ local component = require("component")
 local ME = component.me_interface
 local gpu = component.gpu
 
--- Lua micro-optimizations
-local pairs = pairs
-local tostring = tostring
-local type = type
-local table_insert = table.insert
-local string_gsub = string.gsub
-local os_sleep = os.sleep
-local os_time = os.time
-
 local AE2 = {}
 
 local itemCache = {}
 local cacheTimestamp = 0
-local CACHE_DURATION = 600 -- 10 minutes to refresh patterns
+local CACHE_DURATION = 600 -- 10 minutes
 
--- SNAPSHOT STORAGE
-local snapshot = {
-    items = {},
-    fluids = {},
-    cpus = {}
-}
-
---------------------------------------------------------------------------------
--- HELPER
---------------------------------------------------------------------------------
-local function cleanName(name)
-    if not name then return "" end
-    local noColor = string_gsub(name, "§.", "")
-    local trimmed = noColor:match("^%s*(.-)%s*$") or noColor
-    local lower = trimmed:lower()
-    return string_gsub(string_gsub(lower, "^drop of ", ""), "^molten ", "")
+-- Returns a table of CPU statuses: {isBusy=true/false, name=string, craftingLabel=string|nil}
+function AE2.getCpuStatus()
+  local cpus = {}
+  for _, cpu in pairs(ME.getCpus()) do
+    local status = {}
+    status.name = cpu.cpu.name and cpu.cpu.name() or "CPU"
+    status.isBusy = cpu.cpu.isBusy and cpu.cpu.isBusy() or false
+    local final = cpu.cpu.finalOutput and cpu.cpu.finalOutput()
+    status.craftingLabel = final and final.label or nil
+    table.insert(cpus, status)
+  end
+  return cpus
 end
-
---------------------------------------------------------------------------------
--- SNAPSHOT SYSTEM
---------------------------------------------------------------------------------
-
-function AE2.updateSnapshot()
-    -- 1. Reset tables
-    snapshot.items = {}
-    snapshot.fluids = {}
-    
-    -- 2. Items
-    local allItems = ME.getItemsInNetwork()
-    if allItems then
-        for _, item in pairs(allItems) do
-            local label = item.label
-            if label then
-                -- Store exact name
-                snapshot.items[label] = (snapshot.items[label] or 0) + item.size
-                
-                -- Store clean name (fallback for messy configs)
-                local clean = cleanName(label)
-                if clean ~= label then
-                    snapshot.items[clean] = (snapshot.items[clean] or 0) + item.size
-                end
-            end
-        end
-    end
-
-    -- 3. Fluids FIXED: Handles duplicates and color codes -> need more testing
-    local allFluids = ME.getFluidsInNetwork()
-    if allFluids then
-        for _, fluid in pairs(allFluids) do
-            local label = fluid.label
-            if label then
-                -- A. Store by EXACT name (with colors)
-                snapshot.fluids[label] = (snapshot.fluids[label] or 0) + fluid.amount
-                -- B. Store by CLEAN name (Key for threshold matching)
-                -- This aggregates same fluid from different drives/tanks
-                local clean = cleanName(label)
-                if clean ~= label then
-                    snapshot.fluids[clean] = (snapshot.fluids[clean] or 0) + fluid.amount
-                end
-            end
-        end
-    end
-
-    -- 4. CPUs
-    snapshot.cpus = {}
-    local cpus = ME.getCpus()
-    if cpus then
-        for _, cpu in pairs(cpus) do
-            local info = {
-                isBusy = cpu.cpu.isBusy(),
-                craftingLabel = nil
-            }
-            if info.isBusy then
-                local final = cpu.cpu.finalOutput()
-                if final then info.craftingLabel = final.label end
-            end
-            table_insert(snapshot.cpus, info)
-        end
-    end
-end
-
---------------------------------------------------------------------------------
--- DATA READING (Reads from RAM, not Network)
---------------------------------------------------------------------------------
-
-function AE2.getStock(name)
-    -- 1. Exact Lookup
-    local exactStock = snapshot.items[name] or snapshot.fluids[name] or 0
-    if exactStock > 0 then return exactStock end
-
-    -- 2. Fuzzy/Clean Lookup (Ignores colors, case, prefixes)
-    local clean = cleanName(name)
-    local fuzzyStock = snapshot.items[clean] or snapshot.fluids[clean] or 0
-    
-    return fuzzyStock
-end
-
-function AE2.getCpusSnapshotted()
-    return snapshot.cpus
-end
-
-function AE2.checkIfCraftingSnapshotted()
-    local activeCrafts = {}
-    for _, cpu in pairs(snapshot.cpus) do
-        if cpu.craftingLabel then
-            activeCrafts[cpu.craftingLabel] = true
-            -- Also mark the clean name as crafting
-            activeCrafts[cleanName(cpu.craftingLabel)] = true
-        end
-    end
-    return activeCrafts
-end
-
---------------------------------------------------------------------------------
--- UTILITIES & REQUEST
---------------------------------------------------------------------------------
 
 function AE2.printColoredAfterColon(line, color)
   if type(line) ~= "string" then line = tostring(line) end
@@ -152,55 +40,129 @@ end
 local function formatNumber(num)
   if type(num) ~= "number" then return tostring(num) end
   local str = tostring(num)
+  local parts = {}
   local len = #str
-  local first = len % 3
-  if first == 0 then first = 3 end
-  local res = {str:sub(1, first)}
-  for i = first + 1, len, 3 do
-    table_insert(res, str:sub(i, i + 2))
+  local firstGroup = len % 3
+  if firstGroup == 0 then firstGroup = 3 end
+  table.insert(parts, str:sub(1, firstGroup))
+  local i = firstGroup + 1
+  while i <= len do
+    table.insert(parts, str:sub(i, i + 2))
+    i = i + 3
   end
-  return table.concat(res, "_")
+  return table.concat(parts, "_")
 end
 
+-- Function to get or cache a specific craftable item
 local function getCraftableForItem(itemName)
-  local now = os_time()
-  if now - cacheTimestamp >= CACHE_DURATION then
-    itemCache = {}
-    cacheTimestamp = now
-  end
-  if itemCache[itemName] then return itemCache[itemName] end
+  local currentTime = os.time()
   
-  -- This call remains individual because getCraftables is too heavy
-  -- to call without filters. Mitigated by the 10-min cache.
+  -- Check if we have a cached version of this specific item and it's still valid
+  if itemCache[itemName] and currentTime - cacheTimestamp < CACHE_DURATION then
+    return itemCache[itemName]
+  end
+  
+  -- If cache is too old, clear it completely to save memory
+  if currentTime - cacheTimestamp >= CACHE_DURATION then
+    itemCache = {}
+    cacheTimestamp = currentTime
+  end
+  
+  -- Look for this specific item in craftables
   local craftables = ME.getCraftables({label = itemName})
-  local craftable = craftables and craftables[1] or nil
-  itemCache[itemName] = craftable
-  return craftable
+  if craftables and #craftables >= 1 then
+    itemCache[itemName] = craftables[1] -- Cache only this one item
+    return craftables[1]
+  end
+  
+  itemCache[itemName] = nil -- Cache that it's not craftable
+  return nil
 end
 
+-- Helper function to detect if an item is a fluid drop
+local function isFluidDrop(name)
+  local lowerName = name:lower()
+  return lowerName:find("^drop of ") or lowerName:find("^molten ")
+end
+
+-- Helper function to extract fluid name from drop name
+local function extractFluidName(dropName)
+  local cleaned = dropName:gsub("^[Dd]rop [Oo]f ", ""):gsub("^[Mm]olten ", "")
+  -- Convert to fluid tag format (e.g., "Molten SpaceTime" -> "molten.spacetime")
+  return cleaned:lower():gsub(" ", ".")
+end
+
+-- Returns: success:boolean, message:string
 function AE2.requestItem(name, data, threshold, count)
   local craftable = getCraftableForItem(name)
   if not craftable then
     return false, "is not craftable!"
   end
 
+  -- Check Thresholds
   if threshold and threshold > 0 then
-    -- OPTIMIZATION: Use snapshot stock (Instant & Clean name aware)
-    local currentStock = AE2.getStock(name)
+    local currentStock = 0
+    local itemInSystem = nil
+    
+    -- Detect if this is a fluid drop
+    local isFluid = isFluidDrop(name)
+    
+    if isFluid then
+      -- Usar getItemInNetwork con ae2fc:fluid_drop y NBT tag
+      local fluidName = extractFluidName(name)
+      
+      if data and data.fluid_tag then
+        local fluidTag = '{Fluid:' .. data.fluid_tag .. '}'
+        itemInSystem = ME.getItemInNetwork("ae2fc:fluid_drop", 0, fluidTag)
+      else
+        local fluidTag = '{Fluid:' .. fluidName .. '}'
+        itemInSystem = ME.getItemInNetwork("ae2fc:fluid_drop", 0, fluidTag)
+      end
+      
+      if itemInSystem then
+        currentStock = itemInSystem.size or 0
+      end
+    else
+      local item = craftable.getItemStack()
+      
+      if item and item.name then
+        if data and data.item_id then
+          local itemName = data.item_id
+          local itemDamage = data.item_meta or 0
+          itemInSystem = ME.getItemInNetwork(itemName, itemDamage)
+        else
+          -- Try with tag first
+          if item.tag then
+            itemInSystem = ME.getItemInNetwork(item.name, item.damage or 0, item.tag)
+          end
+          
+          -- Fallback: try without tag
+          if itemInSystem == nil then
+            itemInSystem = ME.getItemInNetwork(item.name, item.damage or 0)
+          end
+        end
+        
+        if itemInSystem then
+          currentStock = itemInSystem.size or 0
+        end
+      end
+    end
 
+    -- Check if threshold is met
     if currentStock >= threshold then
-      return false, "The amount (" .. formatNumber(currentStock) .. ") >= threshold (" .. formatNumber(threshold) .. ")! Aborting request."
+      local currentFmt = formatNumber(currentStock)
+      local thresholdFmt = formatNumber(threshold)
+      return false, "The amount (" .. currentFmt .. ") >= threshold (" .. thresholdFmt .. ")! Aborting request."
     end
   end
 
-  -- If we reach here, we proceed to craft
+  -- Execute Crafting Request
   if craftable then
     local craft = craftable.request(count)
     
-    -- Non-blocking wait
     local timeout = 5 
     while craft.isComputing() and timeout > 0 do 
-        os_sleep(0.1) 
+        os.sleep(0.1) 
         timeout = timeout - 1
     end
 
@@ -212,6 +174,23 @@ function AE2.requestItem(name, data, threshold, count)
   end
 
   return false, "is not craftable!"
+end
+
+function AE2.checkIfCrafting()
+  local items = {}
+  for _, cpu in pairs(ME.getCpus()) do
+    local final = cpu.cpu.finalOutput()
+    if final then
+      items[final.label] = true
+    end
+  end
+  return items
+end
+
+-- Function to manually clear the cache if needed
+function AE2.clearCache()
+  itemCache = {}
+  cacheTimestamp = 0
 end
 
 return AE2
