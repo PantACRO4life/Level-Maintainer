@@ -1,7 +1,7 @@
 local shell = require("shell")
 local filesystem = require("filesystem")
 
-local repo = "https://raw.githubusercontent.com/Armagedon13/Level-Maintainer/"
+local repo = "https://raw.githubusercontent.com/PantACRO4life/Level-Maintainer/"
 local branch = "master"
 
 local files = {

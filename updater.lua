@@ -7,7 +7,7 @@ local Updater = {}
 
 function Updater.new()
   local obj = {}
-  obj.repository = "Armagedon13/Level-Maintainer"
+  obj.repository = "PantACRO4life/Level-Maintainer"
   obj.branch = "master"
   obj.currentVersion = Updater.getCurrentVersion()
   
